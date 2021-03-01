@@ -86,3 +86,16 @@ func (c *connectionFlowController) EnsureMinimumWindowSize(inc protocol.ByteCoun
 	}
 	c.mutex.Unlock()
 }
+
+// The flow controller is reset when 0-RTT is rejected.
+// All stream data is invalidated, it's if we had never opened a stream and never sent any data.
+// At that point, we only have sent stream data, but we didn't have the keys to open 1-RTT keys yet.
+func (c *connectionFlowController) Reset() {
+	c.mutex.Lock()
+	if c.bytesRead > 0 || c.highestReceived > 0 || !c.epochStartTime.IsZero() {
+		panic("flow controller reset after reading data")
+	}
+	c.bytesSent = 0
+	c.lastBlockedAt = 0
+	c.mutex.Unlock()
+}
