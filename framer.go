@@ -17,6 +17,8 @@ type framer interface {
 
 	AddActiveStream(protocol.StreamID)
 	AppendStreamFrames([]ackhandler.Frame, protocol.ByteCount) ([]ackhandler.Frame, protocol.ByteCount)
+
+	Handle0RTTRejection()
 }
 
 type framerI struct {
@@ -139,4 +141,28 @@ func (f *framerI) AppendStreamFrames(frames []ackhandler.Frame, maxLen protocol.
 		length += lastFrame.Length(f.version) - lastFrameLen
 	}
 	return frames, length
+}
+
+func (f *framerI) Handle0RTTRejection() {
+	f.mutex.Lock()
+	f.controlFrameMutex.Lock()
+	f.streamQueue = f.streamQueue[:0]
+	for id := range f.activeStreams {
+		delete(f.activeStreams, id)
+	}
+	var j int
+	for i, frame := range f.controlFrames {
+		switch frame.(type) {
+		case *wire.MaxDataFrame, *wire.MaxStreamDataFrame, *wire.MaxStreamsFrame:
+			panic("didn't expect this frame to be sent in 0-RTT")
+		case *wire.DataBlockedFrame, *wire.StreamDataBlockedFrame, *wire.StreamsBlockedFrame:
+			continue
+		default:
+			f.controlFrames[j] = f.controlFrames[i]
+			j++
+		}
+	}
+	f.controlFrames = f.controlFrames[:j]
+	f.controlFrameMutex.Unlock()
+	f.mutex.Unlock()
 }
